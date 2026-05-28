@@ -2,78 +2,168 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>校園跑班課 - QR Code 簽到掃描</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>校園跑班課 - 快速簽到掃描器</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
-        body { font-family: '微軟正黑體', sans-serif; text-align: center; background: #f0f2f5; margin: 0; padding: 20px; }
-        #reader { width: 100%; max-width: 500px; margin: 20px auto; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.1); background: #fff; }
-        #result-box { margin-top: 20px; padding: 15px; border-radius: 8px; font-weight: bold; }
-        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-        .loading { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
-        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-        h2 { color: #004a8d; }
+        :root {
+            --primary-color: #004a8d;
+            --success-color: #28a745;
+            --error-color: #dc3545;
+        }
+
+        body {
+            font-family: '微軟正黑體', -apple-system, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f8f9fa;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* 標題區 */
+        .header {
+            width: 100%;
+            background-color: var(--primary-color);
+            color: white;
+            padding: 15px 0;
+            text-align: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        /* 掃描視窗 */
+        #reader {
+            width: 100%;
+            max-width: 500px;
+            border: none !important;
+            margin-top: 10px;
+        }
+
+        /* 狀態顯示區 */
+        #status-display {
+            width: 90%;
+            max-width: 450px;
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            font-weight: bold;
+            display: none; /* 初始隱藏 */
+            transition: all 0.3s;
+        }
+
+        .status-loading { background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+        .status-success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .status-error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+
+        /* 說明文字 */
+        .info-text {
+            color: #666;
+            font-size: 14px;
+            margin: 10px 20px;
+            line-height: 1.5;
+        }
+
+        /* 按鈕優化 */
+        #html5-qrcode-button-camera-permission, 
+        #html5-qrcode-button-camera-start, 
+        #html5-qrcode-button-camera-stop {
+            padding: 10px 20px;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            margin: 10px;
+            font-size: 16px;
+        }
     </style>
 </head>
 <body>
-    <h2>📸 學生簽到掃描器</h2>
+
+    <div class="header">
+        <h2 style="margin:0;">📸 學生簽到掃描器</h2>
+    </div>
+
     <div id="reader"></div>
-    <div id="result-box" style="display:none;"></div>
-    <p style="color: #666; font-size: 14px;">請將學生提供的 QR Code 對準攝影機中心</p>
+
+    <div id="status-display"></div>
+
+    <div class="info-text">
+        <b>💡 使用說明：</b><br>
+        1. 請開啟相機權限。<br>
+        2. 對準學生的點名 QR Code。<br>
+        3. 聽到震動或看到綠色提示，代表資料已傳回試算表。<br>
+        4. 系統會自動準備下一次掃描，不需重新整理。
+    </div>
 
     <script>
-        // --- 核心配置 ---
-        const GAS_WEB_APP_URL = "https://script.google.com/a/macros/kssh.khc.edu.tw/s/AKfycbyPOtyUwtuRqHqOfmDbKl0oAtUqWMryjrKq9g3EQ1fhxdn2CFu7PKljvi0qJltILOH3Kg/exec"; 
+        // ==========================================
+        // 🚀 配置區域：請將下方網址替換為您的 GAS 部署網址
+        // ==========================================
+        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/1rXVnxl5uTMjlCfRboiDoCVuAhsZ4i4l58es7ANNnNdU/exec"; 
 
-        const html5QrCode = new Html5Qrcode("reader");
-        const resultBox = document.getElementById("result-box");
+        const statusDisplay = document.getElementById('status-display');
+        let html5QrCode = new Html5Qrcode("reader");
 
-        // 顯示狀態訊息
-        function updateStatus(msg, type) {
-            resultBox.style.display = "block";
-            resultBox.innerText = msg;
-            resultBox.className = type;
+        // 更新介面狀態
+        function setStatus(msg, type) {
+            statusDisplay.style.display = 'block';
+            statusDisplay.innerText = msg;
+            statusDisplay.className = ''; // 清除舊類別
+            
+            if (type === 'success') statusDisplay.classList.add('status-success');
+            else if (type === 'loading') statusDisplay.classList.add('status-loading');
+            else if (type === 'error') statusDisplay.classList.add('status-error');
         }
 
-        // 掃描成功回呼
-        const onScanSuccess = (decodedText) => {
-            // 暫停掃描避免重複發送
+        // 掃描成功處理程序
+        const onScanSuccess = (decodedText, decodedResult) => {
+            // 1. 立即暫停掃描，防止同一時間重複讀取
             html5QrCode.pause(true);
-            updateStatus("掃描成功，上傳資料中...", "loading");
+            
+            // 2. 觸發手機震動 (如果支援)
+            if (navigator.vibrate) navigator.vibrate(100);
 
-            // 透過 POST 將資料傳給 GAS
+            setStatus("✅ 讀取成功！正在同步到試算表...", "loading");
+
+            // 3. 透過 POST 傳送到 GAS
             fetch(GAS_WEB_APP_URL, {
                 method: "POST",
-                mode: "no-cors", // 跨網域存取 GAS 必備
+                mode: "no-cors", // 跨網域關鍵
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ qrContent: decodedText })
             })
             .then(() => {
-                updateStatus("✅ 簽到資料已成功傳回試算表！", "success");
-                // 3秒後重新啟動掃描，等待下位同學
+                setStatus("🎉 簽到完成！請下一位同學準備", "success");
+                // 4. 2秒後恢復掃描狀態
                 setTimeout(() => {
-                    resultBox.style.display = "none";
+                    statusDisplay.style.display = 'none';
                     html5QrCode.resume();
-                }, 3000);
+                }, 2000);
             })
             .catch(err => {
-                updateStatus("❌ 上傳失敗: " + err, "error");
+                setStatus("❌ 傳送失敗，請檢查網路：" + err, "error");
                 setTimeout(() => html5QrCode.resume(), 3000);
             });
         };
 
-        // 啟動相機
+        // 啟動相機 (預設環境/後置鏡頭)
         function startScanner() {
             html5QrCode.start(
-                { facingMode: "environment" }, // 強制使用後置鏡頭
-                { fps: 10, qrbox: { width: 250, height: 250 } },
+                { facingMode: "environment" }, 
+                {
+                    fps: 10,    // 每秒偵測 10 次
+                    qrbox: { width: 250, height: 250 } // 掃描框大小
+                },
                 onScanSuccess
             ).catch(err => {
-                updateStatus("無法開啟相機，請檢查權限：" + err, "error");
+                setStatus("無法啟動相機：" + err, "error");
             });
         }
 
-        startScanner();
+        // 網頁載入後自動啟動
+        window.onload = startScanner;
     </script>
 </body>
 </html>
