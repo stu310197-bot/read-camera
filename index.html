@@ -1,166 +1,79 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>QR Code 掃描測試</title>
-
-<style>
-body{
-  font-family: Arial, sans-serif;
-  text-align:center;
-  background:#f5f5f5;
-  margin:0;
-  padding:20px;
-}
-
-h2{
-  margin-bottom:20px;
-}
-
-video{
-  width:90%;
-  max-width:500px;
-  border-radius:10px;
-  background:#000;
-}
-
-button{
-  padding:10px 20px;
-  margin:10px;
-  font-size:16px;
-  cursor:pointer;
-}
-
-#resultBox{
-  margin:20px auto;
-  width:90%;
-  max-width:500px;
-  background:#fff;
-  border-radius:10px;
-  padding:15px;
-  box-shadow:0 2px 8px rgba(0,0,0,0.1);
-  text-align:left;
-  word-break:break-all;
-}
-
-#result{
-  color:#d63384;
-  font-weight:bold;
-  font-size:18px;
-}
-
-#status{
-  color:#666;
-  margin-top:10px;
-}
-
-canvas{
-  display:none;
-}
-</style>
-
-<!-- jsQR 函式庫 -->
-<script src="https://cdn.jsdelivr.net/npm/jsqr/dist/jsQR.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>校園跑班課 - QR Code 簽到掃描</title>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <style>
+        body { font-family: '微軟正黑體', sans-serif; text-align: center; background: #f0f2f5; margin: 0; padding: 20px; }
+        #reader { width: 100%; max-width: 500px; margin: 20px auto; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.1); background: #fff; }
+        #result-box { margin-top: 20px; padding: 15px; border-radius: 8px; font-weight: bold; }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .loading { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        h2 { color: #004a8d; }
+    </style>
 </head>
-
 <body>
+    <h2>📸 學生簽到掃描器</h2>
+    <div id="reader"></div>
+    <div id="result-box" style="display:none;"></div>
+    <p style="color: #666; font-size: 14px;">請將學生提供的 QR Code 對準攝影機中心</p>
 
-<h2>QR Code 掃描測試</h2>
+    <script>
+        // --- 核心配置 ---
+        const GAS_WEB_APP_URL = ""; 
 
-<video id="video" autoplay playsinline></video>
-<canvas id="canvas"></canvas>
+        const html5QrCode = new Html5Qrcode("reader");
+        const resultBox = document.getElementById("result-box");
 
-<br>
-
-<button onclick="startCamera()">開啟攝影機</button>
-<button onclick="stopCamera()">關閉攝影機</button>
-
-<div id="resultBox">
-  <div><strong>掃描結果：</strong></div>
-  <div id="result">尚未讀到 QR Code</div>
-  <div id="status">請先開啟攝影機</div>
-</div>
-
-<script>
-let stream = null;
-let scanInterval = null;
-let lastResult = "";
-
-const video = document.getElementById("video");
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
-const result = document.getElementById("result");
-const statusText = document.getElementById("status");
-
-async function startCamera(){
-  try{
-    stopCamera();
-
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: "environment"
-      },
-      audio: false
-    });
-
-    video.srcObject = stream;
-    statusText.textContent = "攝影機已開啟，請將 QR Code 對準鏡頭";
-
-    video.onloadedmetadata = () => {
-      video.play();
-      startScan();
-    };
-
-  }catch(err){
-    console.error(err);
-    alert("無法開啟攝影機");
-    statusText.textContent = "無法開啟攝影機";
-  }
-}
-
-function startScan(){
-  scanInterval = setInterval(() => {
-    if(video.readyState === video.HAVE_ENOUGH_DATA){
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const code = jsQR(imageData.data, imageData.width, imageData.height);
-
-      if(code){
-        if(code.data !== lastResult){
-          lastResult = code.data;
-          result.textContent = code.data;
-          statusText.textContent = "已成功讀到 QR Code";
-          console.log("QR Code 內容：", code.data);
+        // 顯示狀態訊息
+        function updateStatus(msg, type) {
+            resultBox.style.display = "block";
+            resultBox.innerText = msg;
+            resultBox.className = type;
         }
-      }
-    }
-  }, 300);
-}
 
-function stopCamera(){
-  if(scanInterval){
-    clearInterval(scanInterval);
-    scanInterval = null;
-  }
+        // 掃描成功回呼
+        const onScanSuccess = (decodedText) => {
+            // 暫停掃描避免重複發送
+            html5QrCode.pause(true);
+            updateStatus("掃描成功，上傳資料中...", "loading");
 
-  if(stream){
-    stream.getTracks().forEach(track => track.stop());
-    stream = null;
-  }
+            // 透過 POST 將資料傳給 GAS
+            fetch(GAS_WEB_APP_URL, {
+                method: "POST",
+                mode: "no-cors", // 跨網域存取 GAS 必備
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ qrContent: decodedText })
+            })
+            .then(() => {
+                updateStatus("✅ 簽到資料已成功傳回試算表！", "success");
+                // 3秒後重新啟動掃描，等待下位同學
+                setTimeout(() => {
+                    resultBox.style.display = "none";
+                    html5QrCode.resume();
+                }, 3000);
+            })
+            .catch(err => {
+                updateStatus("❌ 上傳失敗: " + err, "error");
+                setTimeout(() => html5QrCode.resume(), 3000);
+            });
+        };
 
-  video.srcObject = null;
-  statusText.textContent = "攝影機已關閉";
-}
+        // 啟動相機
+        function startScanner() {
+            html5QrCode.start(
+                { facingMode: "environment" }, // 強制使用後置鏡頭
+                { fps: 10, qrbox: { width: 250, height: 250 } },
+                onScanSuccess
+            ).catch(err => {
+                updateStatus("無法開啟相機，請檢查權限：" + err, "error");
+            });
+        }
 
-window.addEventListener("beforeunload", () => {
-  stopCamera();
-});
-</script>
-
+        startScanner();
+    </script>
 </body>
 </html>
